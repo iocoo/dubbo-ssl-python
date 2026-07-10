@@ -6,7 +6,7 @@ Base on https://github.com/apache/dubbo-python2 and https://github.com/huisongya
 ## Features
 
 - Full Hessian2 serialization/deserialization (primitives, objects, lists, maps, dates, null, circular references)
-- TCP and SSL/TCP connections with custom CA certificate support
+- TCP and SSL/TLS connections with custom CA certificate support
 - Zookeeper-based services discovery with weighted load balancing
 - Connection pooling with automatic heartbeat and reconnection
 - Support `group` settings for Dubbo, Compatible with Dubbo 2.x
