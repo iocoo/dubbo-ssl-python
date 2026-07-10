@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dubbo-ssl-python"
+version = "0.9.0"
+authors = [
+  { name="gigi wang", email="gigiwgoo@gmail.com" }
+]
+description = "Python client for Apache Dubbo RPC protocol, with Hessian2 serialization and SSL/TLS support."
+readme = "README.md"
+long_description = file: "README.md"
+long_description_content_type = "text/markdown"
+url = "https://github.com/iocoo/dubbo-ssl-python/"
+license = { file = "LICENSE" }
+dependencies = [
+    "kazoo>=2.8.0",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.8"
+
+[tool.setuptools.packages.find]
+include = ["dubbo_ssl"]
+
+[project.urls]
+Homepage= "https://github.com/iocoo/dubbo-ssl-python"

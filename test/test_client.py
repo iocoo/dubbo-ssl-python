@@ -2,12 +2,12 @@
 import json
 import threading
 
-from dubbo.client import DubboClient
-from dubbo.client import ZkRegister
-from dubbo.codec.encoder import Object
+from dubbo_ssl.client import DubboClient
+from dubbo_ssl.client import ZkRegister
+from dubbo_ssl.codec.encoder import Object
 import logging
 
-logger = logging.getLogger('python-dubbo')
+logger = logging.getLogger('dubbo_ssl')
 logging.basicConfig(level=logging.INFO)
 
 
