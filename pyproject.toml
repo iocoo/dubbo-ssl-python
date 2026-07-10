@@ -5,7 +5,6 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dubbo-ssl-python"
 version = "0.9.0"
-packages = ["dubbo_ssl"]
 authors = [
   { name="gigi wang", email="gigiwgoo@gmail.com" }
 ]
