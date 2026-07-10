@@ -10,9 +10,7 @@ authors = [
 ]
 description = "Python client for Apache Dubbo RPC protocol, with Hessian2 serialization and SSL/TLS support."
 readme = "README.md"
-long_description = file: "README.md"
-long_description_content_type = "text/markdown"
-url = "https://github.com/iocoo/dubbo-ssl-python/"
+
 license = { file = "LICENSE" }
 dependencies = [
     "kazoo>=2.8.0",
@@ -29,3 +27,4 @@ include = ["dubbo_ssl"]
 
 [project.urls]
 Homepage= "https://github.com/iocoo/dubbo-ssl-python"
+url = "https://github.com/iocoo/dubbo-ssl-python/"
