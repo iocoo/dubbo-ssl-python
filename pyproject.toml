@@ -26,5 +26,5 @@ requires-python = ">=3.8"
 include = ["dubbo_ssl"]
 
 [project.urls]
-Homepage= "https://github.com/iocoo/dubbo-ssl-python"
-url = "https://github.com/iocoo/dubbo-ssl-python/"
+Homepage= "https://iocoo.github.io"
+Repository = "https://github.com/iocoo/dubbo-ssl-python/"
