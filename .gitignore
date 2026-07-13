@@ -2,4 +2,5 @@
 .idea
 dist
 build
-python3_dubbo.egg-info
+__pycache__/
+dubbo_ssl*.egg-info

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dubbo-ssl-python"
-version = "0.9.0"
+version = "0.9.1"
 authors = [
   { name="gigi wang", email="gigiwgoo@gmail.com" }
 ]
@@ -23,7 +23,7 @@ classifiers = [
 requires-python = ">=3.8"
 
 [tool.setuptools.packages.find]
-include = ["dubbo_ssl"]
+include = ["dubbo_ssl*"]
 
 [project.urls]
 Homepage= "https://iocoo.github.io"
