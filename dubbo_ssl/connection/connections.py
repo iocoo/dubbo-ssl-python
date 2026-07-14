@@ -82,7 +82,7 @@ class BaseConnectionPool(object):
             self._conn_lock.acquire()
             try:
                 if host not in self._connection_pool:
-                    self._new_connection(host)
+                    self._new_connection(host,verify)
             finally:
                 self._conn_lock.release()
         return self._connection_pool[host]
