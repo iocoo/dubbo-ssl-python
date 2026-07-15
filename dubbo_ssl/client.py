@@ -29,11 +29,12 @@ class DubboClient(object):
         :param dubbo_version: dubbo的版本号，默认为2.4.10
         :param zk_register: zookeeper注册中心管理端，参见类：ZkRegister
         :param host: 远程主机地址，用于绕过zookeeper进行直连，例如：172.21.4.98:20882
+        :param verify:[None|True|False] None-> non-TLS True -> 启用TLS，验证 dubbo SSL/TLS证书  False-> 启用TLS 不验证服务端证书
         """
         if not zk_register and not host:
             raise RegisterException('zk_register和host至少需要填入一个')
 
-        logger.debug('Created client, interface={}, version={}'.format(interface, version))
+        logger.debug('Created client, interface={}, version={}, group={}'.format(interface, version, group))
 
         self.__interface = interface
         self.__group = group
@@ -51,7 +52,7 @@ class DubboClient(object):
             args = [args]
 
         if self.__zk_register:
-            host = self.__zk_register.get_provider_host(self.__interface)
+            host = self.__zk_register.get_provider_host(self.__interface, self.__version, self.__group)
         else:
             host = self.__host
 
@@ -81,8 +82,12 @@ class ZkRegister(object):
 
     def __init__(self, hosts, verify_certs=False, use_ssl=False,
                  ca_bundle=None, client_cert=None, client_cert_key=None,
-                 application_name='search_platform'):
+                 application_name='ConsumerApp'):
         self.hosts = {}
+        # watch callback
+        self._raw_providers = {}
+        self._subscribed_interfaces = set()
+        self._interface_lock = threading.Lock()
         zk = KazooClient(hosts=hosts,verify_certs=verify_certs,ca=ca_bundle,
                          certfile=client_cert,keyfile=client_cert_key,use_ssl=use_ssl)
         zk.add_listener(self.state_listener)
@@ -116,7 +121,7 @@ class ZkRegister(object):
         由于与Zookeeper的连接断开，所以需要重新订阅消息
         :return:
         """
-        for interface in self.hosts.keys():
+        for interface in list(self._subscribed_interfaces):
             self.zk.get_children(DUBBO_ZK_PROVIDERS.format(interface), watch=self._watch_children)
             self.zk.get_children(DUBBO_ZK_CONFIGURATORS.format(interface), watch=self._watch_configurators)
 
@@ -129,52 +134,91 @@ class ZkRegister(object):
         path = event.path
         logger.debug('zookeeper path: {} changed'.format(path))
 
-        interfaces = path.split['/'][2]
+        interface = path.split('/')[2]
 
         providers = self.zk.get_children(path, watch=self._watch_children)
-        providers = filter(lambda provider: provider['schema'] == 'dubbo', map(parse_url, providers))
-        if not providers:
-            logger.debug('no providers found for {}'.format(interfaces))
-            self.hosts[interfaces] = []
+        dubbo_providers = list(filter(lambda p: p['scheme'] == 'dubbo', map(parse_url, providers))) 
+        if not dubbo_providers:
+            logger.debug('no providers found for {}'.format(interface))
+            self._raw_providers[interface] = []
+            self._clear_hosts_for_interface(interface)
             return
-        self.hosts[interfaces] = map(lambda provider: provider['host'], providers)
-        logger.debug('interfaces: {} providers {}'.format(interfaces, self.hosts[interfaces]))
+        
+        self._raw_providers[interface] = dubbo_providers
+        self._refresh_host_cache(interface)
+        logger.debug('interfaces: {} raw_providers updated,count:{}'.format(interface, len(dubbo_providers)))
 
-    def get_provider_host(self, interface):
+    def _clear_hosts_for_interface(self,interface):
+        """清空指定interface 下的缓存"""
+        keys_to_remove = [k for k in self.hosts if k[0] == interface]
+        for key in keys_to_remove:
+            self.hosts[key] = []
+
+    def _refresh_host_cache(self,interface):
+        """按照group+version重新过滤更新已注册的缓存"""
+        dubbo_providers = self._raw_providers.get(interface, [])
+        subscribed_keys = [k for k in self.hosts if k[0] == interface]
+        for key in subscribed_keys:
+            _, version, group = key
+            target_providers = [
+                p for p in dubbo_providers if p.get('fields',{}).get('version') == version 
+                and p.get('fields',{}).get('group') == group
+            ]
+            self.hosts[key] = [p['host'] for p in target_providers]
+            logger.debug('refreshed cache for key:{},hosts:{}'.format(key, self.hosts[key]))
+
+
+    def get_provider_host(self, interface, version, group):
         """
         从zk中可以根据接口名称获取到此接口某个provider的host
-        :param interface:
+        :param interface: dubbo interface name
+        :param version: 
+        :param group: 
         :return:
         """
-        if interface not in self.hosts:
+        cache_key = (interface, version, group)
+        if cache_key not in self.hosts:
             self.lock.acquire()
             try:
-                if interface not in self.hosts:
+                if cache_key not in self.hosts:
                     path = DUBBO_ZK_PROVIDERS.format(interface)
                     if self.zk.exists(path):
-                        self._get_providers_from_zk(path, interface)
+                        self._get_providers_from_zk(path, interface, version, group)
                         self._get_configurators_from_zk(interface)
                     else:
                         raise RegisterException('No providers for interface {0}'.format(interface))
             finally:
                 self.lock.release()
-        return self._routing_with_wight(interface)
+        return self._routing_with_wight(cache_key)
 
-    def _get_providers_from_zk(self, path, interface):
+    def _get_providers_from_zk(self, path, interface, version, group):
         """
         从zk中根据interface获取到providers信息
         :param path:
         :param interface:
+        :param version:
+        :param group:
         :return:
         """
-        providers = self.zk.get_children(path, watch=self._watch_children)
-        providers = list(filter(lambda provider: provider['scheme'] == 'dubbo', map(parse_url, providers)))
-        if not providers:
-            raise RegisterException('no providers for interface {}'.format(interface))
-        self._register_consumer(providers)
-        self.hosts[interface] = list(map(lambda provider: provider['host'], providers))
+        cache_key = (interface, version, group)
 
-    def _get_configurators_from_zk(self, interface):
+        providers = self.zk.get_children(path, watch=self._watch_children)
+        dubbo_providers = list(filter(lambda p: p['scheme'] == 'dubbo', map(parse_url, providers)))
+        target_providers = [
+            p for p in dubbo_providers
+            if p.get('fields',{}).get('version') == version
+            and p.get('fields',{}).get('group') == group
+        ]
+        if not target_providers:
+            raise RegisterException('no providers for interface {} with version:{} in group:{}'.format(interface,version,group))
+        self.hosts[cache_key] = [p['host'] for p in target_providers]
+        self._raw_providers[interface] = dubbo_providers
+        self._register_consumer(dubbo_providers)
+
+        with self._interface_lock:
+            self._subscribed_interfaces.add(interface)
+
+    def _get_configurats_from_zk(self, interface):
         """
         试图从配置中取出权重相关的信息
         :param interface:
@@ -182,7 +226,7 @@ class ZkRegister(object):
         """
         configurators = self.zk.get_children(DUBBO_ZK_CONFIGURATORS.format(interface), watch=self._watch_configurators)
         if configurators:
-            configurators = map(parse_url, configurators)
+            configurators = list(map(parse_url, configurators))
             conf = {}
             for configurator in configurators:
                 conf[configurator['host']] = configurator['fields'].get('weight', 100)  # 默认100
@@ -202,14 +246,14 @@ class ZkRegister(object):
         configurators = self.zk.get_children(DUBBO_ZK_CONFIGURATORS.format(interface),
                                              watch=self._watch_configurators)
         if configurators:
-            configurators = map(parse_url, configurators)
+            configurators = list(map(parse_url, configurators))
             conf = {}
             for configurator in configurators:
-                conf[configurator['host']] = configurator['fields'].get('weight', 100)
+                conf[configurator['host']] = int(configurator['fields'].get('weight', 100))
             logger.debug('{} configurators: {}'.format(interface, conf))
             self.weights[interface] = conf
         else:
-            logger.debug('No configurator for interface {}')
+            logger.debug('No configurator for interface {}'.format(interface))
             self.weights[interface] = {}
 
     def _register_consumer(self, providers):
@@ -235,6 +279,7 @@ class ZkRegister(object):
             'side': 'consumer',
             'timestamp': int(time.time() * 1000),
             'version': provider_fields.get('version'),
+            'group': provider_fields.get('group'),
         }
 
         params = []
@@ -247,30 +292,34 @@ class ZkRegister(object):
         self.zk.ensure_path(consumer_path)
         self.zk.create_async(consumer_path + '/' + quote(consumer, safe=''), ephemeral=True)
 
-    def _routing_with_wight(self, interface):
+    def _routing_with_wight(self, cached_key):
         """
         根据接口名称以及配置好的权重信息获取一个host
-        :param interface:
+        :param cached_key:
         :return:
         """
-        hosts = self.hosts[interface]
+        hosts = self.hosts.get(cached_key,[])
         if not hosts:
-            raise RegisterException('no providers for interface {}'.format(interface))
+            raise RegisterException('no providers for {}'.format(cached_key))
         # 此接口没有权重设置，使用朴素的路由算法
+        interface = cached_key[0]
         if interface not in self.weights or not self.weights[interface]:
             return random.choice(hosts)
 
         weights = self.weights[interface]
-        hosts_weight = []
-        for host in hosts:
-            hosts_weight.append(int(weights.get(host, 100)))
-
-        hit = random.randint(0, sum(hosts_weight) - 1)
-        for i in range(len(hosts)):
-            if hit <= sum(hosts_weight[:i + 1]):
-                return hosts[i]
-
-        raise RegisterException('Error for finding [{}] host with weight.'.format(interface))
+        weighted_hosts = [(hosts, int(weights.get(host,100))) for host in hosts if int(weights.get(host,100)) >0 ]
+        if not weighted_hosts:
+            raise RegisterException('no available providers for [{}] (all weight are 0).'.format(cached_key))
+        
+        hosts_list,hosts_weight = zip(*weighted_hosts)
+        total = sum(hosts_weight)
+        hit = random.randint(0, total-1)
+        cumulative = 0
+        for i, w in enumerate(hosts_weight):
+            cumulative += w
+            if hit < cumulative:
+                return hosts_list[i]
+        return hosts_list[-1]
 
     def close(self):
         self.zk.stop()
