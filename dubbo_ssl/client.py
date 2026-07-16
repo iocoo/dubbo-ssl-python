@@ -146,7 +146,7 @@ class ZkRegister(object):
         
         self._raw_providers[interface] = dubbo_providers
         self._refresh_host_cache(interface)
-        logger.debug('interfaces: {} raw_providers updated,count:{}'.format(interface, len(dubbo_providers)))
+        logger.debug('interface: {} raw_providers updated,count:{}'.format(interface, len(dubbo_providers)))
 
     def _clear_hosts_for_interface(self,interface):
         """清空指定interface 下的缓存"""
@@ -189,7 +189,7 @@ class ZkRegister(object):
                         raise RegisterException('No providers for interface {0}'.format(interface))
             finally:
                 self.lock.release()
-        return self._routing_with_wight(cache_key)
+        return self._routing_with_weight(cache_key)
 
     def _get_providers_from_zk(self, path, interface, version, group):
         """
@@ -218,7 +218,7 @@ class ZkRegister(object):
         with self._interface_lock:
             self._subscribed_interfaces.add(interface)
 
-    def _get_configurats_from_zk(self, interface):
+    def _get_configurators_from_zk(self, interface):
         """
         试图从配置中取出权重相关的信息
         :param interface:
@@ -229,7 +229,7 @@ class ZkRegister(object):
             configurators = list(map(parse_url, configurators))
             conf = {}
             for configurator in configurators:
-                conf[configurator['host']] = configurator['fields'].get('weight', 100)  # 默认100
+                conf[configurator['host']] = int(configurator['fields'].get('weight', 100))  # 默认100
             self.weights[interface] = conf
 
     def _watch_configurators(self, event):
@@ -292,24 +292,24 @@ class ZkRegister(object):
         self.zk.ensure_path(consumer_path)
         self.zk.create_async(consumer_path + '/' + quote(consumer, safe=''), ephemeral=True)
 
-    def _routing_with_wight(self, cached_key):
+    def _routing_with_weight(self, cache_key):
         """
         根据接口名称以及配置好的权重信息获取一个host
-        :param cached_key:
+        :param cache_key:
         :return:
         """
-        hosts = self.hosts.get(cached_key,[])
+        hosts = self.hosts.get(cache_key,[])
         if not hosts:
-            raise RegisterException('no providers for {}'.format(cached_key))
+            raise RegisterException('no providers for {}'.format(cache_key))
         # 此接口没有权重设置，使用朴素的路由算法
-        interface = cached_key[0]
+        interface = cache_key[0]
         if interface not in self.weights or not self.weights[interface]:
             return random.choice(hosts)
 
         weights = self.weights[interface]
-        weighted_hosts = [(hosts, int(weights.get(host,100))) for host in hosts if int(weights.get(host,100)) >0 ]
+        weighted_hosts = [(host, int(weights.get(host,100))) for host in hosts if int(weights.get(host,100)) >0 ]
         if not weighted_hosts:
-            raise RegisterException('no available providers for [{}] (all weight are 0).'.format(cached_key))
+            raise RegisterException('no available providers for [{}] (all weights are 0).'.format(cache_key))
         
         hosts_list,hosts_weight = zip(*weighted_hosts)
         total = sum(hosts_weight)

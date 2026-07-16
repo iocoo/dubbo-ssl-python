@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dubbo-ssl-python"
-version = "0.9.5"
+version = "0.9.6"
 keywords = ["dubbo"]
 authors = [
   { name="gigi wang", email="gigiwgoo@gmail.com" }
 ]
 description = "Python client for Apache Dubbo RPC protocol, with Hessian2 serialization and SSL/TLS support."
 readme = "README.md"
-license = { file = "LICENSE" }
+license-files = [ "LICENSE" ]
 dependencies = [
     "kazoo>=2.8.0",
 ]
